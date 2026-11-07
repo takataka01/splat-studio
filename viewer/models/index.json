@@ -1,0 +1,29 @@
+[
+  {
+    "name": "synthetic_video",
+    "file": "synthetic_video.ply",
+    "up": [
+      -0.017,
+      -0.99861,
+      -0.04994
+    ]
+  },
+  {
+    "name": "subject01_multiview",
+    "file": "subject01_multiview.ply",
+    "up": [
+      0.0,
+      -0.0,
+      1.0
+    ]
+  },
+  {
+    "name": "synthetic_multiview",
+    "file": "synthetic_multiview.ply",
+    "up": [
+      0.0,
+      -0.0,
+      1.0
+    ]
+  }
+]

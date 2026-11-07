@@ -1,0 +1,22 @@
+# local toolchains (COLMAP conda env, Brush source/build)
+.env/
+.tools/
+
+# intermediate datasets and training output
+work/
+
+# generated media / trained models (large)
+input/*/_orbit_frames/
+input/**/*.mp4
+input/**/*.codex.log
+viewer/models/*.ply
+.DS_Store
+
+# GUI output (rendered videos / frame sequences); scenes/ is kept in git
+renders/
+
+# regenerable preprocessing output
+input/*/multiview_prep/
+
+# Brush/burn autotune cache
+target/

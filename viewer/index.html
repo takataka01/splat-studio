@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Splat Compare</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #1b1b1f; color: #eee; font: 14px/1.4 system-ui, sans-serif; overflow: hidden; }
+    canvas { display: block; }
+    #ui { position: fixed; top: 12px; left: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    #ui button { background: #2c2c33; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+    #ui button.active { background: #e0e0e0; color: #111; }
+    #info { position: fixed; bottom: 12px; left: 12px; opacity: .8; }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+        "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.4.0/spark.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="ui"></div>
+  <div id="info">読み込み中…</div>
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
+
+    // models/index.json: [{ "name": "...", "file": "xxx.ply", "up": [x,y,z] }]
+    // `up` is the subject's up direction in the splat's own coordinates
+    // (known-orbit route: [0,0,1]; COLMAP route: estimated from the cameras).
+    const models = await (await fetch("models/index.json", { cache: "no-cache" })).json();
+
+    const renderer = new THREE.WebGLRenderer({ antialias: false });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1b1b1f);
+    scene.add(new SparkRenderer({ renderer }));
+
+    const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.01, 100);
+    camera.position.set(0, 1.0, 4.2);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0.9, 0);
+    controls.enableDamping = true;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 1.5;
+
+    const holder = new THREE.Group();
+    scene.add(holder);
+    let current = null;
+
+    async function show(m) {
+      document.querySelectorAll("#ui button.model").forEach(b => b.classList.toggle("active", b.dataset.name === m.name));
+      info.textContent = `${m.name} 読み込み中…`;
+      if (current) { holder.remove(current.pivot); current.mesh.dispose(); }
+
+      const mesh = new SplatMesh({ url: `models/${m.file}` });
+      await mesh.initialized;
+
+      // Rotate so the subject's up becomes +Y, then centre it and scale to 1.75 m tall.
+      const pivot = new THREE.Group();
+      const up = new THREE.Vector3(...(m.up ?? [0, 1, 0])).normalize();
+      pivot.quaternion.setFromUnitVectors(up, new THREE.Vector3(0, 1, 0));
+      pivot.add(mesh);
+      holder.add(pivot);
+      pivot.updateMatrixWorld(true);
+
+      // Robust bounds: percentiles of splat centres (ignores stray floaters).
+      const xs = [], ys = [], zs = [];
+      const v = new THREE.Vector3();
+      mesh.forEachSplat((i, center) => {
+        if (i % 7) return;
+        v.copy(center).applyMatrix4(mesh.matrixWorld);
+        xs.push(v.x); ys.push(v.y); zs.push(v.z);
+      });
+      const pct = (a, p) => { a.sort((x, y) => x - y); return a[Math.floor(p * (a.length - 1))]; };
+      const minY = pct(ys, 0.01), maxY = pct(ys, 0.99);
+      const cx = pct(xs, 0.5), cz = pct(zs, 0.5);
+      const s = (m.height ?? 1.75) / Math.max(1e-6, maxY - minY);
+      holder.scale.setScalar(s);
+      holder.position.set(-cx * s, -minY * s, -cz * s);
+
+      current = { mesh, pivot };
+      info.textContent = `${m.name} — ${mesh.numSplats.toLocaleString()} splats　（ドラッグ: 回転 / ホイール: ズーム / 右ドラッグ: 移動）`;
+      history.replaceState(null, "", `?model=${encodeURIComponent(m.name)}`);
+    }
+
+    const ui = document.getElementById("ui");
+    const info = document.getElementById("info");
+    for (const m of models) {
+      const b = document.createElement("button");
+      b.className = "model"; b.dataset.name = m.name; b.textContent = m.name;
+      b.onclick = () => show(m);
+      ui.appendChild(b);
+    }
+    const rot = document.createElement("button");
+    rot.textContent = "自動回転"; rot.classList.add("active");
+    rot.onclick = () => { controls.autoRotate = !controls.autoRotate; rot.classList.toggle("active", controls.autoRotate); };
+    ui.appendChild(rot);
+
+    const want = new URLSearchParams(location.search).get("model");
+    if (models.length) await show(models.find(m => m.name === want) ?? models[0]);
+    else info.textContent = "models/index.json にモデルがありません";
+
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+    renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+  </script>
+</body>
+</html>
